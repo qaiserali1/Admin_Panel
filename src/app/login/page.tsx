@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ShieldCheck, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -8,6 +9,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,12 +28,12 @@ export default function LoginPage() {
 
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Invalid master credentials');
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Invalid credentials');
       }
 
-      // Hard redirect to dashboard so middleware and cookies sync immediately
-      window.location.href = '/dashboard';
+      router.refresh();
+      window.location.replace('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Login failed. Please check credentials.');
       setLoading(false);

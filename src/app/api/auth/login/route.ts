@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,28 +11,24 @@ export async function POST(req: NextRequest) {
     const validUsername = process.env.ADMIN_USERNAME || 'admin';
     const validPassword = process.env.ADMIN_PASSWORD || 'password123';
 
-    // Foolproof check: accepts hardcoded admin/password123 or env variables
-    const isMasterAdmin =
+    if (
       (u === 'admin' || u === validUsername) &&
-      (p === 'password123' || p === validPassword);
-
-    if (isMasterAdmin) {
-      const response = NextResponse.json(
-        { success: true, message: 'Logged in successfully' },
-        { status: 200 }
-      );
-
-      response.cookies.set({
+      (p === 'password123' || p === validPassword)
+    ) {
+      // Set cookie using Next.js cookies() helper
+      cookies().set({
         name: 'admin_token',
-        value: 'authenticated_master',
+        value: 'authenticated',
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
         path: '/',
+        sameSite: 'lax',
         maxAge: 60 * 60 * 24 * 7, // 7 days
       });
 
-      return response;
+      return NextResponse.json(
+        { success: true, redirectUrl: '/dashboard' },
+        { status: 200 }
+      );
     }
 
     return NextResponse.json(
