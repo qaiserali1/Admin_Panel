@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
     }
 
     const trimmedUsername = username.trim();
+    const trimmedDeviceId = String(deviceId).trim();
 
     // Check if user exists
     const existingUser = await prisma.user.findUnique({
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verify password for existing user
+    // Verify password
     const isPasswordValid = await bcrypt.compare(password, existingUser.password);
     if (!isPasswordValid) {
       return NextResponse.json(
@@ -40,17 +41,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Check if already blocked
     if (existingUser.status === 'blocked') {
       return NextResponse.json(
         {
           success: false,
           status: 'blocked',
-          message: 'Account blocked by Admin.',
+          message: 'Your account is temporarily blocked. Please contact admin.',
         },
         { status: 403 }
       );
     }
 
+    // Check if pending approval
     if (existingUser.status === 'pending') {
       return NextResponse.json(
         {
@@ -62,34 +65,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const trimmedDeviceId = deviceId.trim();
-
-    // Device Binding Logic
-    if (!existingUser.deviceId) {
-      // First login, bind device
-      await prisma.user.update({
-        where: { id: existingUser.id },
-        data: { deviceId: trimmedDeviceId },
-      });
-      existingUser.deviceId = trimmedDeviceId;
-    } else if (existingUser.deviceId !== trimmedDeviceId) {
-      // AUTO-BLOCK TRIGGER
+    // 1. Device Binding & Multi-Device Auto-Block Check
+    if (existingUser.deviceId && existingUser.deviceId !== trimmedDeviceId) {
+      // Multi-device login detected -> Automatically block user in DB
       await prisma.user.update({
         where: { id: existingUser.id },
         data: { status: 'blocked' },
       });
-      
+
       return NextResponse.json(
         {
           success: false,
           status: 'blocked',
-          message: 'Account blocked due to unauthorized device login. Contact Admin.',
+          message: 'Your account is temporarily blocked due to multi-device login attempt. Please contact admin.',
         },
         { status: 403 }
       );
     }
 
-    // Generate session JWT token
+    // If first login and no device bound yet -> Bind current device
+    if (!existingUser.deviceId) {
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: { deviceId: trimmedDeviceId },
+      });
+      existingUser.deviceId = trimmedDeviceId;
+    }
+
+    // Generate JWT token
     const token = jwt.sign(
       {
         userId: existingUser.id,
@@ -110,7 +113,7 @@ export async function POST(req: NextRequest) {
         id: existingUser.id,
         username: existingUser.username,
         role: existingUser.role,
-        status: existingUser.status,
+        status: 'active',
         deviceId: existingUser.deviceId,
       },
     });
