@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { ShieldCheck, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -9,7 +8,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,17 +18,22 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          username: username.trim(),
+          password: password.trim(),
+        }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        throw new Error('Invalid master credentials');
+        throw new Error(data.error || 'Invalid master credentials');
       }
 
-      router.push('/dashboard');
+      // Hard redirect to dashboard so middleware and cookies sync immediately
+      window.location.href = '/dashboard';
     } catch (err: any) {
-      setError(err.message);
-    } finally {
+      setError(err.message || 'Login failed. Please check credentials.');
       setLoading(false);
     }
   };
@@ -38,7 +41,6 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden">
-        
         {/* Subtle background glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[200%] h-32 bg-indigo-500/10 blur-[60px] pointer-events-none" />
 
@@ -52,7 +54,7 @@ export default function LoginPage() {
 
         <form onSubmit={handleLogin} className="space-y-5 relative">
           {error && (
-            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm string text-center font-medium">
+            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm text-center font-medium">
               {error}
             </div>
           )}
@@ -65,8 +67,8 @@ export default function LoginPage() {
               type="text"
               required
               value={username}
-              onChange={e => setUsername(e.target.value)}
-              placeholder="Enter master username"
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="admin"
               className="w-full bg-slate-950/80 border border-slate-800 focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm focus:outline-none transition-colors placeholder:text-slate-600"
             />
           </div>
@@ -79,8 +81,8 @@ export default function LoginPage() {
               type="password"
               required
               value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="password123"
               className="w-full bg-slate-950/80 border border-slate-800 focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm focus:outline-none transition-colors placeholder:text-slate-600"
             />
           </div>
