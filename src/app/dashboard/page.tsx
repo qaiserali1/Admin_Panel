@@ -22,6 +22,7 @@ import {
   Check,
   LogOut,
   Pencil,
+  Share2,
 } from 'lucide-react';
 
 interface User {
@@ -246,10 +247,71 @@ export default function DashboardPage() {
     }
   };
 
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string, id: string) => {
+    let copied = false;
+
+    // 1. Try modern Clipboard API
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      } catch (e) {
+        console.warn('navigator.clipboard failed, using fallback', e);
+      }
+    }
+
+    // 2. Mobile-friendly fallback using temporary textarea
+    if (!copied && typeof document !== 'undefined') {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.top = '0';
+        textarea.style.left = '0';
+        textarea.style.width = '2em';
+        textarea.style.height = '2em';
+        textarea.style.padding = '0';
+        textarea.style.border = 'none';
+        textarea.style.outline = 'none';
+        textarea.style.boxShadow = 'none';
+        textarea.style.background = 'transparent';
+        textarea.setAttribute('readonly', '');
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        textarea.setSelectionRange(0, 99999);
+
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (successful) copied = true;
+      } catch (e) {
+        console.error('execCommand copy failed', e);
+      }
+    }
+
     setCopiedId(id);
+    showToast('Copied to clipboard!', 'success');
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleShareCredentials = async (username: string, password?: string) => {
+    const textToShare = `*FMCG Order Booker Credentials*\n\n👤 *Username:* ${username}\n🔑 *Password:* ${password || ''}\n\n📱 Please login via the FMCG Order Booker app.`;
+
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: 'FMCG Booker Credentials',
+          text: textToShare,
+        });
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    // Direct WhatsApp share fallback
+    const encoded = encodeURIComponent(textToShare);
+    window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
   };
 
   const handleLogout = async () => {
@@ -670,25 +732,93 @@ export default function DashboardPage() {
             {generatedCredentials ? (
               <div className="space-y-4">
                 <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl relative">
-                   <h4 className="flex items-center gap-2 text-emerald-400 font-bold mb-2"><CheckCircle2 className="w-5 h-5"/> Success! Booker Created</h4>
-                   <p className="text-sm text-slate-300 mb-4">Please copy and share these credentials with the booker. They will not be visible again.</p>
-                   <div className="bg-slate-950/80 border border-slate-800 p-3 rounded-lg font-mono text-sm space-y-2">
-                     <div className="flex justify-between items-center">
-                       <div><span className="text-slate-500 text-xs uppercase tracking-wider">Username:</span> <br/><span className="text-white text-base select-all">{generatedCredentials.username}</span></div>
-                       <button onClick={() => copyToClipboard(generatedCredentials.username, 'gen-user')} className="p-2 bg-slate-800 rounded-lg hover:bg-slate-700 text-slate-300 transition">
-                         {copiedId === 'gen-user' ? <Check className="w-4 h-4 text-emerald-400"/> : <Copy className="w-4 h-4"/>}
-                       </button>
-                     </div>
-                     <div className="flex justify-between items-center border-t border-slate-800 pt-2">
-                       <div><span className="text-slate-500 text-xs uppercase tracking-wider">Password:</span> <br/><span className="text-white text-base select-all">{generatedCredentials.password}</span></div>
-                       <button onClick={() => copyToClipboard(generatedCredentials.password, 'gen-pass')} className="p-2 bg-slate-800 rounded-lg hover:bg-slate-700 text-slate-300 transition">
-                         {copiedId === 'gen-pass' ? <Check className="w-4 h-4 text-emerald-400"/> : <Copy className="w-4 h-4"/>}
-                       </button>
-                     </div>
-                   </div>
+                  <h4 className="flex items-center gap-2 text-emerald-400 font-bold mb-2">
+                    <CheckCircle2 className="w-5 h-5" /> Success! Booker Created
+                  </h4>
+                  <p className="text-xs sm:text-sm text-slate-300 mb-4">
+                    Please copy or share these credentials with the booker. They will not be visible again.
+                  </p>
+                  
+                  <div className="bg-slate-950/90 border border-slate-800 p-3.5 rounded-xl font-mono text-sm space-y-3">
+                    <div className="flex justify-between items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-slate-500 text-[10px] sm:text-xs uppercase tracking-wider block">Username:</span>
+                        <span className="text-white text-sm sm:text-base select-all font-semibold block truncate">
+                          {generatedCredentials.username}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(generatedCredentials.username, 'gen-user')}
+                        className="p-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 rounded-lg text-slate-300 transition flex items-center gap-1 text-xs"
+                        title="Copy Username"
+                      >
+                        {copiedId === 'gen-user' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+
+                    <div className="flex justify-between items-center border-t border-slate-800/80 pt-2.5 gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-slate-500 text-[10px] sm:text-xs uppercase tracking-wider block">Password:</span>
+                        <span className="text-white text-sm sm:text-base select-all font-semibold block truncate">
+                          {generatedCredentials.password}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(generatedCredentials.password, 'gen-pass')}
+                        className="p-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 rounded-lg text-slate-300 transition flex items-center gap-1 text-xs"
+                        title="Copy Password"
+                      >
+                        {copiedId === 'gen-pass' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Action buttons: Copy All & Share via WhatsApp */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyToClipboard(
+                          `Username: ${generatedCredentials.username}\nPassword: ${generatedCredentials.password}`,
+                          'gen-all'
+                        )
+                      }
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition"
+                    >
+                      {copiedId === 'gen-all' ? (
+                        <Check className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-4 h-4 text-indigo-400" />
+                      )}
+                      <span>Copy All Details</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleShareCredentials(
+                          generatedCredentials.username,
+                          generatedCredentials.password
+                        )
+                      }
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-emerald-600/20 transition"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      <span>Share / WhatsApp</span>
+                    </button>
+                  </div>
                 </div>
+
                 <div className="flex justify-end pt-2">
-                  <button onClick={() => { setIsAddModalOpen(false); setGeneratedCredentials(null); }} className="px-5 py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-lg transition">
+                  <button
+                    onClick={() => {
+                      setIsAddModalOpen(false);
+                      setGeneratedCredentials(null);
+                    }}
+                    className="px-5 py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-lg transition"
+                  >
                     Done
                   </button>
                 </div>
