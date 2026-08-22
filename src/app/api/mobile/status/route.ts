@@ -4,11 +4,13 @@ import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fmcg-super-secret-jwt-key';
 
+// Helper to resolve user from request params or token
 async function resolveUser(req: NextRequest, bodyOrParams: any) {
   let userId = bodyOrParams?.userId;
   let username = bodyOrParams?.username;
   const deviceId = bodyOrParams?.deviceId;
 
+  // Extract from Authorization header if present
   const authHeader = req.headers.get('authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
@@ -16,11 +18,13 @@ async function resolveUser(req: NextRequest, bodyOrParams: any) {
       const decoded: any = jwt.verify(token, JWT_SECRET);
       if (decoded?.userId) userId = decoded.userId;
       if (decoded?.username && !username) username = decoded.username;
-    } catch {}
+    } catch {
+      // Invalid/expired token, fallback to explicit params
+    }
   }
 
   if (!userId && !username) {
-    return { user: null, deviceId, error: 'userId, username, or valid token is required' };
+    return { user: null, deviceId, error: 'userId or username or valid token is required' };
   }
 
   const user = await prisma.user.findFirst({
@@ -42,70 +46,66 @@ async function resolveUser(req: NextRequest, bodyOrParams: any) {
   return { user, deviceId, error: null };
 }
 
+// GET: /api/mobile/status?username=... or ?userId=...&deviceId=...
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
+    const userId = searchParams.get('userId');
+    const username = searchParams.get('username');
+    const deviceId = searchParams.get('deviceId');
+
     const { user, deviceId: incomingDeviceId, error } = await resolveUser(req, {
-      userId: searchParams.get('userId'),
-      username: searchParams.get('username'),
-      deviceId: searchParams.get('deviceId'),
+      userId,
+      username,
+      deviceId,
     });
 
     if (error || !user) {
-      return NextResponse.json({ error: error || 'User not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: error || 'User not found' },
+        { status: 404 }
+      );
     }
 
-    // 1. If admin blocked user in DB
-    if (user.status === 'blocked') {
+    // Check for device mismatch during status check if deviceId is provided
+    if (
+      incomingDeviceId &&
+      user.deviceId &&
+      user.deviceId !== String(incomingDeviceId).trim()
+    ) {
+      // Auto-block user if device differs
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { status: 'blocked' },
+      });
+
       return NextResponse.json(
         {
           status: 'blocked',
           isBlocked: true,
           isActive: false,
           isPending: false,
-          message: 'Your account has been blocked by Admin.',
+          message: 'Your account is temporarily blocked due to multi-device login attempt. Please contact admin.',
         },
         { status: 403 }
       );
     }
 
-    // 2. If user pending approval
-    if (user.status === 'pending') {
-      return NextResponse.json({
-        status: 'pending',
-        isPending: true,
-        isActive: false,
-        isBlocked: false,
-        message: 'Approval Pending.',
-      });
-    }
-
-    // 3. If device mismatch on active account
-    if (
-      incomingDeviceId &&
-      user.deviceId &&
-      user.deviceId !== String(incomingDeviceId).trim()
-    ) {
-      return NextResponse.json(
-        {
-          status: 'device_mismatch',
-          isBlocked: false,
-          isActive: false,
-          message: 'Please logout from previous device to login this device',
-        },
-        { status: 401 }
-      );
-    }
-
     return NextResponse.json({
-      status: 'active',
-      isActive: true,
-      isBlocked: false,
-      isPending: false,
+      status: user.status,
+      isBlocked: user.status === 'blocked',
+      isActive: user.status === 'active',
+      isPending: user.status === 'pending',
       deviceId: user.deviceId,
-      message: 'Active',
+      message:
+        user.status === 'blocked'
+          ? 'Your account is temporarily blocked. Please contact admin.'
+          : user.status === 'pending'
+          ? 'Approval Pending.'
+          : 'Active',
     });
   } catch (err: any) {
+    console.error('Status Check API Error:', err);
     return NextResponse.json(
       { error: 'Internal Server Error', details: err.message },
       { status: 500 }
@@ -113,63 +113,57 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// POST: /api/mobile/status { userId, username, deviceId }
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const { user, deviceId: incomingDeviceId, error } = await resolveUser(req, body);
 
     if (error || !user) {
-      return NextResponse.json({ error: error || 'User not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: error || 'User not found' },
+        { status: 404 }
+      );
     }
 
-    if (user.status === 'blocked') {
+    // Check for device mismatch
+    if (
+      incomingDeviceId &&
+      user.deviceId &&
+      user.deviceId !== String(incomingDeviceId).trim()
+    ) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { status: 'blocked' },
+      });
+
       return NextResponse.json(
         {
           status: 'blocked',
           isBlocked: true,
           isActive: false,
           isPending: false,
-          message: 'Your account has been blocked by Admin.',
+          message: 'Your account is temporarily blocked due to multi-device login attempt. Please contact admin.',
         },
         { status: 403 }
       );
     }
 
-    if (user.status === 'pending') {
-      return NextResponse.json({
-        status: 'pending',
-        isPending: true,
-        isActive: false,
-        isBlocked: false,
-        message: 'Approval Pending.',
-      });
-    }
-
-    if (
-      incomingDeviceId &&
-      user.deviceId &&
-      user.deviceId !== String(incomingDeviceId).trim()
-    ) {
-      return NextResponse.json(
-        {
-          status: 'device_mismatch',
-          isBlocked: false,
-          isActive: false,
-          message: 'Please logout from previous device to login this device',
-        },
-        { status: 401 }
-      );
-    }
-
     return NextResponse.json({
-      status: 'active',
-      isActive: true,
-      isBlocked: false,
-      isPending: false,
+      status: user.status,
+      isBlocked: user.status === 'blocked',
+      isActive: user.status === 'active',
+      isPending: user.status === 'pending',
       deviceId: user.deviceId,
-      message: 'Active',
+      message:
+        user.status === 'blocked'
+          ? 'Your account is temporarily blocked. Please contact admin.'
+          : user.status === 'pending'
+          ? 'Approval Pending.'
+          : 'Active',
     });
   } catch (err: any) {
+    console.error('Status Check API Error:', err);
     return NextResponse.json(
       { error: 'Internal Server Error', details: err.message },
       { status: 500 }

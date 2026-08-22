@@ -20,40 +20,40 @@ export async function POST(req: NextRequest) {
     const trimmedUsername = username.trim();
     const trimmedDeviceId = String(deviceId).trim();
 
-    // 1. Check if user exists
+    // Check if user exists
     const existingUser = await prisma.user.findUnique({
       where: { username: trimmedUsername },
     });
 
     if (!existingUser) {
       return NextResponse.json(
-        { error: 'Invalid username or password' },
+        { error: 'Invalid username' },
         { status: 401 }
       );
     }
 
-    // 2. Verify password
+    // Verify password
     const isPasswordValid = await bcrypt.compare(password, existingUser.password);
     if (!isPasswordValid) {
       return NextResponse.json(
-        { error: 'Invalid username or password' },
+        { error: 'Invalid password' },
         { status: 401 }
       );
     }
 
-    // 3. Check if account is blocked by admin
+    // Check if already blocked
     if (existingUser.status === 'blocked') {
       return NextResponse.json(
         {
           success: false,
           status: 'blocked',
-          message: 'Your account has been blocked by Admin.',
+          message: 'Your account is temporarily blocked. Please contact admin.',
         },
         { status: 403 }
       );
     }
 
-    // 4. Check if account is pending approval
+    // Check if pending approval
     if (existingUser.status === 'pending') {
       return NextResponse.json(
         {
@@ -65,17 +65,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5. Strict Per-User Device Restriction (1-User 1-Device)
-    // If this specific user is currently bound to another deviceId
+    // 1. Device Binding & Multi-Device Auto-Block Check
     if (existingUser.deviceId && existingUser.deviceId !== trimmedDeviceId) {
+      // Multi-device login detected -> Automatically block user in DB
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: { status: 'blocked' },
+      });
+
       return NextResponse.json(
-        { error: 'Please logout from previous device to login this device' },
-        { status: 401 }
+        {
+          success: false,
+          status: 'blocked',
+          message: 'Your account is temporarily blocked due to multi-device login attempt. Please contact admin.',
+        },
+        { status: 403 }
       );
     }
 
-    // 6. Multi-User Device Accommodation & First-Time Device Binding
-    // If user has no active bound device, bind this device to this user
+    // If first login and no device bound yet -> Bind current device
     if (!existingUser.deviceId) {
       await prisma.user.update({
         where: { id: existingUser.id },
