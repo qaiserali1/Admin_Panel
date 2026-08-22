@@ -4,13 +4,11 @@ import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fmcg-super-secret-jwt-key';
 
-// Helper to resolve user from request params or token
 async function resolveUser(req: NextRequest, bodyOrParams: any) {
   let userId = bodyOrParams?.userId;
   let username = bodyOrParams?.username;
   const deviceId = bodyOrParams?.deviceId;
 
-  // Extract from Authorization header if present
   const authHeader = req.headers.get('authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
@@ -18,9 +16,7 @@ async function resolveUser(req: NextRequest, bodyOrParams: any) {
       const decoded: any = jwt.verify(token, JWT_SECRET);
       if (decoded?.userId) userId = decoded.userId;
       if (decoded?.username && !username) username = decoded.username;
-    } catch {
-      // Invalid/expired token, fallback to explicit params
-    }
+    } catch {}
   }
 
   if (!userId && !username) {
@@ -46,18 +42,13 @@ async function resolveUser(req: NextRequest, bodyOrParams: any) {
   return { user, deviceId, isMissingParams: false };
 }
 
-// GET: /api/mobile/status?username=... or ?userId=...&deviceId=...
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('userId');
-    const username = searchParams.get('username');
-    const deviceId = searchParams.get('deviceId');
-
     const { user, deviceId: incomingDeviceId, isMissingParams } = await resolveUser(req, {
-      userId,
-      username,
-      deviceId,
+      userId: searchParams.get('userId'),
+      username: searchParams.get('username'),
+      deviceId: searchParams.get('deviceId'),
     });
 
     if (isMissingParams) {
@@ -67,7 +58,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Handled deleted user cleanly with HTTP 401 and status: 'deleted'
+    // 1. Deleted User
     if (!user) {
       return NextResponse.json(
         {
@@ -82,32 +73,41 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 1. If admin blocked user in DB
+    // 2. Blocked User -> Auto-clear device binding
     if (user.status === 'blocked') {
+      if (user.deviceId) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { deviceId: null },
+        });
+      }
+
       return NextResponse.json(
         {
           status: 'blocked',
           isBlocked: true,
           isActive: false,
           isPending: false,
+          error: 'Your account has been blocked by Admin.',
           message: 'Your account has been blocked by Admin.',
         },
         { status: 403 }
       );
     }
 
-    // 2. If user pending approval
+    // 3. Pending User
     if (user.status === 'pending') {
       return NextResponse.json({
         status: 'pending',
         isPending: true,
         isActive: false,
         isBlocked: false,
+        error: 'Approval Pending.',
         message: 'Approval Pending.',
       });
     }
 
-    // 3. If device mismatch on active account
+    // 4. Device Mismatch
     if (
       incomingDeviceId &&
       user.deviceId &&
@@ -118,6 +118,7 @@ export async function GET(req: NextRequest) {
           status: 'device_mismatch',
           isBlocked: false,
           isActive: false,
+          error: 'Please logout from previous device to login this device',
           message: 'Please logout from previous device to login this device',
         },
         { status: 401 }
@@ -133,7 +134,7 @@ export async function GET(req: NextRequest) {
       message: 'Active',
     });
   } catch (err: any) {
-    console.error('Status Check API Error:', err);
+    console.error('Status Check API Error (GET):', err);
     return NextResponse.json(
       { error: 'Internal Server Error', details: err.message },
       { status: 500 }
@@ -141,7 +142,6 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST: /api/mobile/status { userId, username, deviceId }
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Handled deleted user cleanly with HTTP 401 and status: 'deleted'
+    // 1. Deleted User
     if (!user) {
       return NextResponse.json(
         {
@@ -169,29 +169,41 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 2. Blocked User -> Auto-clear device binding
     if (user.status === 'blocked') {
+      if (user.deviceId) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { deviceId: null },
+        });
+      }
+
       return NextResponse.json(
         {
           status: 'blocked',
           isBlocked: true,
           isActive: false,
           isPending: false,
+          error: 'Your account has been blocked by Admin.',
           message: 'Your account has been blocked by Admin.',
         },
         { status: 403 }
       );
     }
 
+    // 3. Pending User
     if (user.status === 'pending') {
       return NextResponse.json({
         status: 'pending',
         isPending: true,
         isActive: false,
         isBlocked: false,
+        error: 'Approval Pending.',
         message: 'Approval Pending.',
       });
     }
 
+    // 4. Device Mismatch
     if (
       incomingDeviceId &&
       user.deviceId &&
@@ -202,6 +214,7 @@ export async function POST(req: NextRequest) {
           status: 'device_mismatch',
           isBlocked: false,
           isActive: false,
+          error: 'Please logout from previous device to login this device',
           message: 'Please logout from previous device to login this device',
         },
         { status: 401 }
@@ -217,7 +230,7 @@ export async function POST(req: NextRequest) {
       message: 'Active',
     });
   } catch (err: any) {
-    console.error('Status Check API Error:', err);
+    console.error('Status Check API Error (POST):', err);
     return NextResponse.json(
       { error: 'Internal Server Error', details: err.message },
       { status: 500 }

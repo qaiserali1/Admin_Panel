@@ -17,6 +17,9 @@ export async function GET(req: NextRequest) {
       where.OR = [
         { username: { contains: search } },
         { deviceId: { contains: search } },
+        { bookerName: { contains: search } },
+        { agencyName: { contains: search } },
+        { mobileNumber: { contains: search } },
       ];
     }
 
@@ -77,6 +80,10 @@ export async function PATCH(req: NextRequest) {
         );
       }
       updateData.status = status;
+      // Auto-clear device binding when user is blocked
+      if (status === 'blocked') {
+        updateData.deviceId = null;
+      }
     }
 
     if (resetDevice === true) {
@@ -122,7 +129,7 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-// POST: Optionally manually create a user from Admin Panel
+// POST: Manually create a user from Admin Panel
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -137,10 +144,8 @@ export async function POST(req: NextRequest) {
 
     // Auto-generate username
     const baseName = bookerName.toLowerCase().replace(/\s+/g, '');
-    const randomUsernameNum = Math.floor(100 + Math.random() * 900); // 3 digit number
-    let username = `${baseName}${randomUsernameNum}`;
+    let username = `${baseName}${Math.floor(100 + Math.random() * 900)}`;
 
-    // Ensure username is unique
     let isUnique = false;
     while (!isUnique) {
       const existing = await prisma.user.findUnique({
@@ -153,8 +158,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Auto-generate password
-    const plainPassword = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit number
+    // Auto-generate 6-digit password
+    const plainPassword = Math.floor(100000 + Math.random() * 900000).toString();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
     const newUser = await prisma.user.create({
@@ -180,11 +185,11 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json(
-      { 
-        message: 'User created successfully', 
+      {
+        message: 'User created successfully',
         user: newUser,
         username: username,
-        password: plainPassword
+        password: plainPassword,
       },
       { status: 201 }
     );
