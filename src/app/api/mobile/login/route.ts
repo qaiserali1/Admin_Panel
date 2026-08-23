@@ -78,8 +78,12 @@ export async function POST(req: NextRequest) {
     // 5. Device Binding & Multi-Device Check
     if (existingUser.deviceId && existingUser.deviceId !== trimmedDeviceId) {
       return NextResponse.json(
-        { error: 'Please logout from previous device to login this device' },
-        { status: 401 }
+        {
+          success: false,
+          error: 'This account is already active on another device. Multi-device login is strictly prohibited.',
+          message: 'This account is already active on another device. Multi-device login is strictly prohibited.',
+        },
+        { status: 403 }
       );
     }
 
