@@ -75,20 +75,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5. Device Binding & Multi-Device Check
-    if (existingUser.deviceId && existingUser.deviceId !== trimmedDeviceId) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'This account is already active on another device. Multi-device login is strictly prohibited.',
-          message: 'This account is already active on another device. Multi-device login is strictly prohibited.',
-        },
-        { status: 403 }
-      );
-    }
+    // 5. Device Binding & Multi-Device Check (TEMPORARILY DISABLED)
+    // if (existingUser.deviceId && existingUser.deviceId !== trimmedDeviceId) {
+    //   return NextResponse.json(
+    //     {
+    //       success: false,
+    //       error: 'This account is already active on another device. Multi-device login is strictly prohibited.',
+    //       message: 'This account is already active on another device. Multi-device login is strictly prohibited.',
+    //     },
+    //     { status: 403 }
+    //   );
+    // }
 
-    // 6. Bind initial device
-    if (!existingUser.deviceId) {
+    // 6. Bind/update device
+    if (existingUser.deviceId !== trimmedDeviceId) {
       await prisma.user.update({
         where: { id: existingUser.id },
         data: { deviceId: trimmedDeviceId },
