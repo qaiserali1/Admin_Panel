@@ -5,7 +5,7 @@ Admin Panel & Backend API for FMCG Order Booking Mobile Application with **Hardw
 ## Tech Stack
 - **Framework**: Next.js 14 (App Router)
 - **Styling**: Tailwind CSS & Lucide Icons
-- **Database ORM**: Prisma ORM (SQLite for instant local dev, ready for PostgreSQL migration on Coolify)
+- **Database ORM**: Prisma ORM (Persistent PostgreSQL - Supabase / Neon / Railway / Self-hosted)
 - **Authentication & Security**: bcryptjs & JWT
 
 ---
@@ -18,12 +18,12 @@ npm install
 ```
 
 ### 2. Environment Setup
-Copy the environment template:
+Copy the environment template and configure your external PostgreSQL `DATABASE_URL`:
 ```bash
 cp .env.example .env
 ```
 
-### 3. Initialize Prisma Database & Seed Data
+### 3. Initialize Prisma Database & Push Schema
 ```bash
 npx prisma generate
 npx prisma db push

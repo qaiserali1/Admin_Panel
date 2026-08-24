@@ -21,7 +21,7 @@ RUN --mount=type=cache,target=/root/.npm \
     npm ci --prefer-offline --no-audit
 
 # ---------------------------------------------------------
-# Stage 3: Builder with Next.js Compiler Cache & DB prep
+# Stage 3: Builder with Next.js Compiler Cache
 # ---------------------------------------------------------
 FROM base AS builder
 WORKDIR /app
@@ -31,11 +31,9 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
-ENV DATABASE_URL="file:/app/prisma/dev.db"
 
-# Generate Prisma client and initialize SQLite schema
-RUN npx prisma generate && \
-    npx prisma db push --skip-generate
+# Generate Prisma client
+RUN npx prisma generate
 
 # Compile Next.js with BuildKit compiler cache
 RUN --mount=type=cache,target=/app/.next/cache \
@@ -51,20 +49,16 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
-ENV DATABASE_URL="file:/app/prisma/dev.db"
 
 # Create non-root system user for security
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# Copy Prisma schema, pre-initialized DB, and standalone assets
+# Copy Prisma schema and standalone assets
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-# Ensure nextjs user has write permissions for SQLite database operations
-RUN chown -R nextjs:nodejs /app/prisma
 
 USER nextjs
 
