@@ -76,8 +76,8 @@ USER nextjs
 
 EXPOSE 3000
 
-# Zero-downtime healthcheck: Prevents 502 Bad Gateway by ensuring traffic is only routed when healthy
-HEALTHCHECK --interval=4s --timeout=3s --start-period=5s --retries=3 \
+# Generous start-period prevents Coolify killing the container before Next.js finishes booting
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=5 \
   CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
 
 CMD ["./docker-entrypoint.sh"]
