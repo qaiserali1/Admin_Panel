@@ -23,11 +23,23 @@ Copy the environment template and configure your external PostgreSQL `DATABASE_U
 cp .env.example .env
 ```
 
-### 3. Initialize Prisma Database & Push Schema
+Edit `.env` and replace `DATABASE_URL` with your external PostgreSQL connection string:
+```
+# Neon
+DATABASE_URL="postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require"
+
+# Supabase
+DATABASE_URL="postgresql://postgres:pass@db.xxx.supabase.co:5432/postgres?sslmode=require"
+
+# Railway
+DATABASE_URL="postgresql://postgres:pass@host:port/railway"
+```
+
+### 3. Apply Migrations & Generate Prisma Client
 ```bash
 npx prisma generate
-npx prisma db push
-npm run db:seed
+npm run db:migrate     # applies prisma/migrations to your external DB
+npm run db:seed        # optional: seed 4 test booker accounts
 ```
 
 ### 4. Run Development Server
@@ -35,6 +47,30 @@ npm run db:seed
 npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) to access the Admin Dashboard.
+
+---
+
+## 🐳 Production Docker Deployment
+
+> **Data persists across all redeploys** — migrations run automatically on every container start via `docker-entrypoint.sh`.
+
+**Required environment variable on your deployment platform:**
+```
+DATABASE_URL=postgresql://user:pass@host/dbname?sslmode=require
+JWT_SECRET=your-secret-here
+```
+
+The container start sequence is:
+1. `prisma migrate deploy` → applies any pending schema migrations
+2. `node server.js` → starts the Next.js server
+
+### Database Scripts
+| Command | Description |
+|---------|-------------|
+| `npm run db:migrate` | Apply pending migrations (production-safe) |
+| `npm run db:seed` | Seed 4 test booker accounts |
+| `npm run db:generate` | Regenerate Prisma client after schema changes |
+| `npm run db:studio` | Open Prisma Studio (local GUI) |
 
 ---
 
