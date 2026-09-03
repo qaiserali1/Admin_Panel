@@ -32,8 +32,8 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
-# Generate Prisma client using local binary (prevents npx from pulling Prisma 7)
-RUN ./node_modules/.bin/prisma generate
+# Generate Prisma client
+RUN npx prisma generate
 
 # Compile Next.js with BuildKit compiler cache
 RUN --mount=type=cache,target=/app/.next/cache \
