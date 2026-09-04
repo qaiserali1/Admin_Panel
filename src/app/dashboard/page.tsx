@@ -157,6 +157,27 @@ export default function DashboardPage() {
     }
   };
 
+  const handleResetDailyImportCount = async (id: string) => {
+    try {
+      setActionLoadingId(id);
+      const res = await fetch('/api/admin/users', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, resetDailyImportCount: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to reset import count');
+
+      showToast("Today's import count reset to 0");
+      setEditingUser((prev) => (prev && prev.id === id ? { ...prev, dailyImportCount: 0 } : prev));
+      fetchUsers();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   const handleDeleteUser = async (id: string, username: string) => {
     if (!confirm(`Are you sure you want to delete booker "${username}"?`)) return;
     try {
@@ -181,15 +202,16 @@ export default function DashboardPage() {
     if (!editingUser) return;
     try {
       setActionLoadingId(editingUser.id);
+      const parsedLimit = parseInt(String(editSheetImportLimit), 10);
       const res = await fetch('/api/admin/users', {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: editingUser.id,
           agencyName: editAgencyName,
           bookerName: editBookerName,
           mobileNumber: editMobileNumber,
-          sheetImportLimit: Number(editSheetImportLimit) || 0,
+          sheetImportLimit: !isNaN(parsedLimit) ? parsedLimit : 1,
           ...(resetPassword && newPassword ? { password: newPassword } : {}),
         }),
       });
@@ -1041,9 +1063,20 @@ export default function DashboardPage() {
                   onChange={(e) => setEditSheetImportLimit(Math.max(0, parseInt(e.target.value, 10) || 0))}
                   className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                 />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Current today count: <span className="font-semibold text-indigo-400">{editingUser.dailyImportCount ?? 0}</span> / {editSheetImportLimit} imports used.
-                </p>
+                <div className="flex items-center justify-between mt-1.5">
+                  <p className="text-[11px] text-slate-500">
+                    Current today count: <span className="font-semibold text-indigo-400">{editingUser.dailyImportCount ?? 0}</span> / {editSheetImportLimit} used.
+                  </p>
+                  {(editingUser.dailyImportCount ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleResetDailyImportCount(editingUser.id)}
+                      className="text-[11px] text-amber-400 hover:text-amber-300 underline font-medium"
+                    >
+                      Reset count to 0
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="pt-2 border-t border-slate-800">

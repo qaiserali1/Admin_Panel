@@ -2,6 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders,
+  });
+}
+
 // GET: Fetch all users
 export async function GET(req: NextRequest) {
   try {
@@ -45,7 +62,6 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Counts for dashboard summary cards
     const counts = {
       total: await prisma.user.count(),
       pending: await prisma.user.count({ where: { status: 'pending' } }),
@@ -53,18 +69,18 @@ export async function GET(req: NextRequest) {
       blocked: await prisma.user.count({ where: { status: 'blocked' } }),
     };
 
-    return NextResponse.json({ users, counts });
+    return NextResponse.json({ users, counts }, { headers: corsHeaders });
   } catch (error: any) {
     console.error('Admin Fetch Users Error:', error);
     return NextResponse.json(
       { error: 'Failed to fetch users', details: error.message },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }
 
-// PATCH / PUT: Update user status, details, or sheetImportLimit
-export async function PATCH(req: NextRequest) {
+// Handler for user updates (PUT and PATCH)
+async function handleUpdateUser(req: NextRequest) {
   try {
     const body = await req.json();
     const {
@@ -80,7 +96,10 @@ export async function PATCH(req: NextRequest) {
     } = body;
 
     if (!id) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'User ID is required' },
+        { status: 400, headers: corsHeaders }
+      );
     }
 
     const updateData: any = {};
@@ -89,11 +108,10 @@ export async function PATCH(req: NextRequest) {
       if (!['pending', 'active', 'blocked'].includes(status)) {
         return NextResponse.json(
           { error: "Invalid status. Must be 'pending', 'active', or 'blocked'" },
-          { status: 400 }
+          { status: 400, headers: corsHeaders }
         );
       }
       updateData.status = status;
-      // Auto-clear device binding when user is blocked
       if (status === 'blocked') {
         updateData.deviceId = null;
       }
@@ -107,8 +125,9 @@ export async function PATCH(req: NextRequest) {
     if (bookerName !== undefined) updateData.bookerName = bookerName.trim();
     if (mobileNumber !== undefined) updateData.mobileNumber = mobileNumber.trim();
 
-    if (sheetImportLimit !== undefined) {
-      const parsedLimit = parseInt(sheetImportLimit, 10);
+    // Strictly parse sheetImportLimit as an Integer before saving
+    if (sheetImportLimit !== undefined && sheetImportLimit !== null && sheetImportLimit !== '') {
+      const parsedLimit = parseInt(String(sheetImportLimit), 10);
       if (!isNaN(parsedLimit) && parsedLimit >= 0) {
         updateData.sheetImportLimit = parsedLimit;
       }
@@ -143,21 +162,29 @@ export async function PATCH(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({
-      message: `User ${updatedUser.username} updated successfully`,
-      user: updatedUser,
-    });
+    return NextResponse.json(
+      {
+        message: `User ${updatedUser.username} updated successfully`,
+        user: updatedUser,
+      },
+      { headers: corsHeaders }
+    );
   } catch (error: any) {
     console.error('Admin Update User Error:', error);
     return NextResponse.json(
       { error: 'Failed to update user', details: error.message },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }
 
-// PUT: Alias to PATCH for REST compatibility
-export const PUT = PATCH;
+export async function PUT(req: NextRequest) {
+  return handleUpdateUser(req);
+}
+
+export async function PATCH(req: NextRequest) {
+  return handleUpdateUser(req);
+}
 
 // POST: Manually create a user from Admin Panel
 export async function POST(req: NextRequest) {
@@ -168,11 +195,10 @@ export async function POST(req: NextRequest) {
     if (!agencyName || !bookerName || !mobileNumber) {
       return NextResponse.json(
         { error: 'Agency Name, Booker Name, and Mobile Number are required' },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
-    // Auto-generate username
     const baseName = bookerName.toLowerCase().replace(/\s+/g, '');
     let username = `${baseName}${Math.floor(100 + Math.random() * 900)}`;
 
@@ -188,11 +214,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Auto-generate 6-digit password
     const plainPassword = Math.floor(100000 + Math.random() * 900000).toString();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
-    const parsedLimit = sheetImportLimit !== undefined ? parseInt(sheetImportLimit, 10) : 1;
+    const parsedLimit = sheetImportLimit !== undefined ? parseInt(String(sheetImportLimit), 10) : 1;
     const finalLimit = !isNaN(parsedLimit) && parsedLimit >= 0 ? parsedLimit : 1;
 
     const newUser = await prisma.user.create({
@@ -232,13 +257,13 @@ export async function POST(req: NextRequest) {
         username: username,
         password: plainPassword,
       },
-      { status: 201 }
+      { status: 201, headers: corsHeaders }
     );
   } catch (error: any) {
     console.error('Admin Create User Error:', error);
     return NextResponse.json(
       { error: 'Failed to create user', details: error.message },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }
@@ -250,19 +275,25 @@ export async function DELETE(req: NextRequest) {
     const id = searchParams.get('id');
 
     if (!id) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'User ID is required' },
+        { status: 400, headers: corsHeaders }
+      );
     }
 
     await prisma.user.delete({
       where: { id },
     });
 
-    return NextResponse.json({ message: 'User deleted successfully' });
+    return NextResponse.json(
+      { message: 'User deleted successfully' },
+      { headers: corsHeaders }
+    );
   } catch (error: any) {
     console.error('Admin Delete User Error:', error);
     return NextResponse.json(
       { error: 'Failed to delete user', details: error.message },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }

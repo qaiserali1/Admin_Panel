@@ -2,12 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+
 const JWT_SECRET = process.env.JWT_SECRET || 'fmcg-super-secret-jwt-key';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+  'Pragma': 'no-cache',
+  'Expires': '0',
 };
 
 export async function OPTIONS() {
@@ -19,13 +26,25 @@ export async function OPTIONS() {
 
 function isDifferentDay(d1: Date, d2: Date | null | undefined): boolean {
   if (!d2) return true;
-  return d1.toDateString() !== d2.toDateString();
+  const date1 = new Date(d1);
+  const date2 = new Date(d2);
+  return (
+    date1.getFullYear() !== date2.getFullYear() ||
+    date1.getMonth() !== date2.getMonth() ||
+    date1.getDate() !== date2.getDate()
+  );
 }
 
 async function resolveUser(req: NextRequest, bodyOrParams: any) {
   let userId = bodyOrParams?.userId;
   let username = bodyOrParams?.username;
 
+  // Fallback to URL search parameters
+  const { searchParams } = new URL(req.url);
+  if (!userId) userId = searchParams.get('userId');
+  if (!username) username = searchParams.get('username');
+
+  // Fallback to Bearer token
   const authHeader = req.headers.get('authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
@@ -40,11 +59,15 @@ async function resolveUser(req: NextRequest, bodyOrParams: any) {
     return null;
   }
 
+  // Always fetch the freshest user record directly from database
   return await prisma.user.findFirst({
     where: {
       OR: [
         ...(userId ? [{ id: String(userId).trim() }] : []),
-        ...(username ? [{ username: String(username).trim() }] : []),
+        ...(username ? [
+          { username: String(username).trim() },
+          { username: { equals: String(username).trim(), mode: 'insensitive' as const } },
+        ] : []),
       ],
     },
     select: {
@@ -78,11 +101,18 @@ async function handleCheckImport(req: NextRequest, params: any) {
 
     const now = new Date();
     const hasRolledOver = isDifferentDay(now, user.lastImportDate);
-    let currentCount = hasRolledOver ? 0 : user.dailyImportCount;
 
-    // Check if limit exceeded
-    if (currentCount >= user.sheetImportLimit) {
-      if (hasRolledOver) {
+    // If midnight has passed, count resets to 0 for the new day
+    let currentCount = hasRolledOver ? 0 : (user.dailyImportCount || 0);
+
+    // Strictly ensure sheetImportLimit is an integer
+    const limit = typeof user.sheetImportLimit === 'number'
+      ? user.sheetImportLimit
+      : parseInt(String(user.sheetImportLimit), 10) || 1;
+
+    // Check if limit is reached or exceeded: DO NOT increment, return 403
+    if (currentCount >= limit) {
+      if (hasRolledOver && user.dailyImportCount !== 0) {
         await prisma.user.update({
           where: { id: user.id },
           data: {
@@ -98,20 +128,27 @@ async function handleCheckImport(req: NextRequest, params: any) {
           error: 'Limit exceed',
           message: 'Limit exceed',
           dailyImportCount: currentCount,
-          sheetImportLimit: user.sheetImportLimit,
+          sheetImportLimit: limit,
           remainingImports: 0,
         },
         { status: 403, headers: corsHeaders }
       );
     }
 
-    // Increment count by 1 and update lastImportDate
+    // Strictly under limit: increment count by 1 and update lastImportDate
     const newCount = currentCount + 1;
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: {
         dailyImportCount: newCount,
         lastImportDate: now,
+      },
+      select: {
+        id: true,
+        username: true,
+        dailyImportCount: true,
+        sheetImportLimit: true,
+        lastImportDate: true,
       },
     });
 
@@ -122,7 +159,7 @@ async function handleCheckImport(req: NextRequest, params: any) {
         message: 'Import allowed',
         dailyImportCount: updatedUser.dailyImportCount,
         sheetImportLimit: updatedUser.sheetImportLimit,
-        remainingImports: updatedUser.sheetImportLimit - updatedUser.dailyImportCount,
+        remainingImports: Math.max(0, updatedUser.sheetImportLimit - updatedUser.dailyImportCount),
         lastImportDate: updatedUser.lastImportDate,
       },
       { status: 200, headers: corsHeaders }

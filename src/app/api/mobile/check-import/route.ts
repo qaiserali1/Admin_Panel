@@ -1,1 +1,1 @@
-export { GET, POST, OPTIONS } from '../../users/check-import/route';
+export { GET, POST, OPTIONS, dynamic, revalidate, fetchCache } from '../../users/check-import/route';
