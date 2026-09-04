@@ -34,6 +34,9 @@ export async function GET(req: NextRequest) {
         agencyName: true,
         bookerName: true,
         mobileNumber: true,
+        sheetImportLimit: true,
+        dailyImportCount: true,
+        lastImportDate: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -60,11 +63,21 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// PATCH: Update user status or reset device binding
+// PATCH / PUT: Update user status, details, or sheetImportLimit
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, status, resetDevice, agencyName, bookerName, mobileNumber, password } = body;
+    const {
+      id,
+      status,
+      resetDevice,
+      agencyName,
+      bookerName,
+      mobileNumber,
+      password,
+      sheetImportLimit,
+      resetDailyImportCount,
+    } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
@@ -94,6 +107,17 @@ export async function PATCH(req: NextRequest) {
     if (bookerName !== undefined) updateData.bookerName = bookerName.trim();
     if (mobileNumber !== undefined) updateData.mobileNumber = mobileNumber.trim();
 
+    if (sheetImportLimit !== undefined) {
+      const parsedLimit = parseInt(sheetImportLimit, 10);
+      if (!isNaN(parsedLimit) && parsedLimit >= 0) {
+        updateData.sheetImportLimit = parsedLimit;
+      }
+    }
+
+    if (resetDailyImportCount === true) {
+      updateData.dailyImportCount = 0;
+    }
+
     if (password) {
       const hashedPassword = await bcrypt.hash(password, 10);
       updateData.password = hashedPassword;
@@ -111,6 +135,9 @@ export async function PATCH(req: NextRequest) {
         agencyName: true,
         bookerName: true,
         mobileNumber: true,
+        sheetImportLimit: true,
+        dailyImportCount: true,
+        lastImportDate: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -129,11 +156,14 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
+// PUT: Alias to PATCH for REST compatibility
+export const PUT = PATCH;
+
 // POST: Manually create a user from Admin Panel
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { agencyName, bookerName, mobileNumber } = body;
+    const { agencyName, bookerName, mobileNumber, sheetImportLimit } = body;
 
     if (!agencyName || !bookerName || !mobileNumber) {
       return NextResponse.json(
@@ -162,6 +192,9 @@ export async function POST(req: NextRequest) {
     const plainPassword = Math.floor(100000 + Math.random() * 900000).toString();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
+    const parsedLimit = sheetImportLimit !== undefined ? parseInt(sheetImportLimit, 10) : 1;
+    const finalLimit = !isNaN(parsedLimit) && parsedLimit >= 0 ? parsedLimit : 1;
+
     const newUser = await prisma.user.create({
       data: {
         username,
@@ -172,6 +205,8 @@ export async function POST(req: NextRequest) {
         agencyName: agencyName.trim(),
         bookerName: bookerName.trim(),
         mobileNumber: mobileNumber.trim(),
+        sheetImportLimit: finalLimit,
+        dailyImportCount: 0,
       },
       select: {
         id: true,
@@ -179,6 +214,12 @@ export async function POST(req: NextRequest) {
         role: true,
         status: true,
         deviceId: true,
+        agencyName: true,
+        bookerName: true,
+        mobileNumber: true,
+        sheetImportLimit: true,
+        dailyImportCount: true,
+        lastImportDate: true,
         createdAt: true,
         updatedAt: true,
       },

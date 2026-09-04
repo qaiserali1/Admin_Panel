@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import {
   Users,
   UserCheck,
@@ -23,6 +24,7 @@ import {
   LogOut,
   Pencil,
   Share2,
+  Package,
 } from 'lucide-react';
 
 interface User {
@@ -34,6 +36,9 @@ interface User {
   agencyName?: string | null;
   bookerName?: string | null;
   mobileNumber?: string | null;
+  sheetImportLimit?: number;
+  dailyImportCount?: number;
+  lastImportDate?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -59,6 +64,7 @@ export default function DashboardPage() {
   const [agencyName, setAgencyName] = useState('');
   const [bookerName, setBookerName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
+  const [sheetImportLimit, setSheetImportLimit] = useState(1);
   const [generatedCredentials, setGeneratedCredentials] = useState<{username: string, password: string} | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -67,6 +73,7 @@ export default function DashboardPage() {
   const [editAgencyName, setEditAgencyName] = useState('');
   const [editBookerName, setEditBookerName] = useState('');
   const [editMobileNumber, setEditMobileNumber] = useState('');
+  const [editSheetImportLimit, setEditSheetImportLimit] = useState(1);
   const [resetPassword, setResetPassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
 
@@ -181,6 +188,7 @@ export default function DashboardPage() {
           agencyName: editAgencyName,
           bookerName: editBookerName,
           mobileNumber: editMobileNumber,
+          sheetImportLimit: Number(editSheetImportLimit) || 0,
           ...(resetPassword && newPassword ? { password: newPassword } : {}),
         }),
       });
@@ -207,6 +215,7 @@ export default function DashboardPage() {
           agencyName,
           bookerName,
           mobileNumber,
+          sheetImportLimit: Number(sheetImportLimit) || 1,
         }),
       });
       const data = await res.json();
@@ -217,6 +226,7 @@ export default function DashboardPage() {
       setAgencyName('');
       setBookerName('');
       setMobileNumber('');
+      setSheetImportLimit(1);
       fetchUsers();
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -340,6 +350,14 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
+          <Link
+            href="/dashboard/products"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-indigo-950/60 hover:bg-indigo-900/60 text-indigo-200 border border-indigo-700/60 rounded-lg transition"
+          >
+            <Package className="w-4 h-4 text-indigo-400" />
+            <span>Products &amp; SKUs</span>
+          </Link>
+
           <button
             onClick={() => setIsTestModalOpen(true)}
             className="flex items-center gap-2 px-3.5 py-2 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition"
@@ -564,11 +582,16 @@ export default function DashboardPage() {
                               <p className="font-bold text-slate-100">{user.bookerName || 'Unknown Booker'}</p>
                               <div className="flex flex-col text-[11px] text-slate-400 mt-0.5">
                                 <span>@{user.username} {user.id.slice(0,6)}</span>
-                                {(user.agencyName || user.mobileNumber) && (
-                                  <span className="text-[10px] text-slate-500 truncate max-w-[200px]">
-                                    {user.agencyName && `Agency: ${user.agencyName}`}{user.agencyName && user.mobileNumber && ' | '}{user.mobileNumber && `Mobile: ${user.mobileNumber}`}
+                                <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                  {(user.agencyName || user.mobileNumber) && (
+                                    <span className="text-[10px] text-slate-500 truncate max-w-[200px]">
+                                      {user.agencyName && `Agency: ${user.agencyName}`}{user.agencyName && user.mobileNumber && ' | '}{user.mobileNumber && `Mobile: ${user.mobileNumber}`}
+                                    </span>
+                                  )}
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-950/60 border border-indigo-800/40 text-[10px] font-medium text-indigo-300">
+                                    Limit: {user.dailyImportCount ?? 0}/{user.sheetImportLimit ?? 1} imports
                                   </span>
-                                )}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -680,6 +703,7 @@ export default function DashboardPage() {
                                 setEditAgencyName(user.agencyName || '');
                                 setEditBookerName(user.bookerName || '');
                                 setEditMobileNumber(user.mobileNumber || '');
+                                setEditSheetImportLimit(user.sheetImportLimit ?? 1);
                                 setResetPassword(false);
                                 setNewPassword('');
                               }}
@@ -867,6 +891,22 @@ export default function DashboardPage() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    Sheet Import Limit (Per Day)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    placeholder="e.g. 1"
+                    value={sheetImportLimit}
+                    onChange={(e) => setSheetImportLimit(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">Allowed sheet imports per calendar day (default: 1).</p>
+                </div>
+
                 <div className="flex items-center justify-end gap-3 pt-3">
                   <button
                     type="button"
@@ -959,6 +999,23 @@ export default function DashboardPage() {
                   onChange={(e) => setEditMobileNumber(e.target.value)}
                   className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wide">
+                  Sheet Import Limit (Per Day)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  required
+                  value={editSheetImportLimit}
+                  onChange={(e) => setEditSheetImportLimit(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Current today count: <span className="font-semibold text-indigo-400">{editingUser.dailyImportCount ?? 0}</span> / {editSheetImportLimit} imports used.
+                </p>
               </div>
 
               <div className="pt-2 border-t border-slate-800">

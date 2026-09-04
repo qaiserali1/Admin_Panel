@@ -14,8 +14,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Protect root and dashboard paths
-  const isProtected = pathname === '/' || pathname.startsWith('/dashboard');
+  // Protect root, dashboard, and products paths
+  const isProtected = pathname === '/' || pathname.startsWith('/dashboard') || pathname.startsWith('/products');
 
   if (isProtected) {
     if (!isAuthenticated) {
@@ -33,5 +33,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/dashboard/:path*', '/login'],
+  matcher: ['/', '/dashboard/:path*', '/products/:path*', '/login'],
 };
