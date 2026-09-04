@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 4. Device Mismatch
+    // 4. Device Mismatch (Multi-Device Restriction)
     if (
       incomingDeviceId &&
       user.deviceId &&
@@ -118,10 +118,10 @@ export async function GET(req: NextRequest) {
           status: 'device_mismatch',
           isBlocked: false,
           isActive: false,
-          error: 'Please logout from previous device to login this device',
-          message: 'Please logout from previous device to login this device',
+          error: 'This account is already active on another device. Multi-device login is strictly prohibited.',
+          message: 'This account is already active on another device. Multi-device login is strictly prohibited.',
         },
-        { status: 401 }
+        { status: 403 }
       );
     }
 
@@ -203,7 +203,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 4. Device Mismatch
+    // 4. Device Mismatch (Multi-Device Restriction)
     if (
       incomingDeviceId &&
       user.deviceId &&
@@ -214,10 +214,10 @@ export async function POST(req: NextRequest) {
           status: 'device_mismatch',
           isBlocked: false,
           isActive: false,
-          error: 'Please logout from previous device to login this device',
-          message: 'Please logout from previous device to login this device',
+          error: 'This account is already active on another device. Multi-device login is strictly prohibited.',
+          message: 'This account is already active on another device. Multi-device login is strictly prohibited.',
         },
-        { status: 401 }
+        { status: 403 }
       );
     }
 

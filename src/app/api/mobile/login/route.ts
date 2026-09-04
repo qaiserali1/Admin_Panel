@@ -76,8 +76,12 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Device Binding & Multi-Device Check
-    // Case B: Account is bound to a DIFFERENT device → block immediately
-    if (existingUser.deviceId && existingUser.deviceId !== trimmedDeviceId) {
+    const dbDeviceId = existingUser.deviceId ? String(existingUser.deviceId).trim() : null;
+
+    // Case B (Different Device Login):
+    // If the database has an active deviceId that does not match the incoming request's deviceId,
+    // immediately reject the login with HTTP 403 and the exact error message.
+    if (dbDeviceId && dbDeviceId !== trimmedDeviceId) {
       return NextResponse.json(
         {
           success: false,
@@ -89,14 +93,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Case A: Same device re-login (deviceId matches) → falls through, login proceeds normally
-    // Case Unbound: No deviceId yet → bind this device on first login
-    if (existingUser.deviceId !== trimmedDeviceId) {
+    // Case A (Same Device Re-login) & Initial Device Binding:
+    // If the database has an existing deviceId matching incoming deviceId (same physical device re-logging in),
+    // or if the account is currently unbound, allow login to proceed and refresh session/timestamp.
+    if (!dbDeviceId) {
       await prisma.user.update({
         where: { id: existingUser.id },
         data: { deviceId: trimmedDeviceId },
       });
       existingUser.deviceId = trimmedDeviceId;
+    } else {
+      // Same physical device logging back in - refresh session and persist active device confirmation
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: { deviceId: trimmedDeviceId, updatedAt: new Date() },
+      });
     }
 
     // Generate JWT token

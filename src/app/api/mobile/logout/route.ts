@@ -43,14 +43,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Unbind device for the user in the database
+    // Multi-Device Restriction: Device binding is strictly preserved across logouts.
+    // The account remains locked to this physical device until explicitly reset by an Admin.
     await prisma.user.update({
       where: { id: user.id },
-      data: { deviceId: null },
+      data: { updatedAt: new Date() },
     });
 
     return NextResponse.json(
-      { success: true, message: 'Logged out successfully. Device unbound.' },
+      { success: true, message: 'Logged out successfully. Device binding preserved.' },
       { status: 200 }
     );
   } catch (error: any) {

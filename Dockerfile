@@ -68,9 +68,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_module
 # Copy .bin wrappers so ./node_modules/.bin/prisma CLI is executable at runtime
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/.bin
 
-# Copy and set up entrypoint
+# Copy and set up entrypoint (ensures LF line endings regardless of build platform)
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
+RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh
 
 USER nextjs
 
