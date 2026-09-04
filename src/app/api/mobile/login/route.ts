@@ -5,6 +5,19 @@ import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fmcg-super-secret-jwt-key';
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders,
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -13,7 +26,7 @@ export async function POST(req: NextRequest) {
     if (!username || !password || !deviceId) {
       return NextResponse.json(
         { error: 'username, password, and deviceId are required' },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -28,7 +41,7 @@ export async function POST(req: NextRequest) {
     if (!existingUser) {
       return NextResponse.json(
         { error: 'Invalid username or password' },
-        { status: 401 }
+        { status: 401, headers: corsHeaders }
       );
     }
 
@@ -37,13 +50,12 @@ export async function POST(req: NextRequest) {
     if (!isPasswordValid) {
       return NextResponse.json(
         { error: 'Invalid username or password' },
-        { status: 401 }
+        { status: 401, headers: corsHeaders }
       );
     }
 
     // 3. Check if account is blocked
     if (existingUser.status === 'blocked') {
-      // Auto-clear deviceId on blocked account
       if (existingUser.deviceId) {
         await prisma.user.update({
           where: { id: existingUser.id },
@@ -58,7 +70,7 @@ export async function POST(req: NextRequest) {
           error: 'Your account has been blocked by Admin.',
           message: 'Your account has been blocked by Admin.',
         },
-        { status: 403 }
+        { status: 403, headers: corsHeaders }
       );
     }
 
@@ -71,31 +83,26 @@ export async function POST(req: NextRequest) {
           error: 'Approval Pending.',
           message: 'Approval Pending.',
         },
-        { status: 403 }
+        { status: 403, headers: corsHeaders }
       );
     }
 
-    // 5. Device Binding & Multi-Device Check
+    // 5. Strict 1-User-to-1-Device Binding Check
     const dbDeviceId = existingUser.deviceId ? String(existingUser.deviceId).trim() : null;
 
-    // Case B (Different Device Login):
-    // If the database has an active deviceId that does not match the incoming request's deviceId,
-    // immediately reject the login with HTTP 403 and the exact error message.
-    if (dbDeviceId && dbDeviceId !== trimmedDeviceId) {
+    if (dbDeviceId !== null && dbDeviceId !== trimmedDeviceId) {
       return NextResponse.json(
         {
           success: false,
           status: 'device_mismatch',
-          error: 'This account is already active on another device. Multi-device login is strictly prohibited.',
-          message: 'This account is already active on another device. Multi-device login is strictly prohibited.',
+          error: 'This Account is Already Register on Another Device',
+          message: 'This Account is Already Register on Another Device',
         },
-        { status: 403 }
+        { status: 403, headers: corsHeaders }
       );
     }
 
-    // Case A (Same Device Re-login) & Initial Device Binding:
-    // If the database has an existing deviceId matching incoming deviceId (same physical device re-logging in),
-    // or if the account is currently unbound, allow login to proceed and refresh session/timestamp.
+    // Bind device if currently null, or refresh session
     if (!dbDeviceId) {
       await prisma.user.update({
         where: { id: existingUser.id },
@@ -103,7 +110,6 @@ export async function POST(req: NextRequest) {
       });
       existingUser.deviceId = trimmedDeviceId;
     } else {
-      // Same physical device logging back in - refresh session and persist active device confirmation
       await prisma.user.update({
         where: { id: existingUser.id },
         data: { deviceId: trimmedDeviceId, updatedAt: new Date() },
@@ -122,24 +128,27 @@ export async function POST(req: NextRequest) {
       { expiresIn: '30d' }
     );
 
-    return NextResponse.json({
-      success: true,
-      status: 'active',
-      message: 'Login successful',
-      token,
-      user: {
-        id: existingUser.id,
-        username: existingUser.username,
-        role: existingUser.role,
+    return NextResponse.json(
+      {
+        success: true,
         status: 'active',
-        deviceId: existingUser.deviceId,
+        message: 'Login successful',
+        token,
+        user: {
+          id: existingUser.id,
+          username: existingUser.username,
+          role: existingUser.role,
+          status: 'active',
+          deviceId: existingUser.deviceId,
+        },
       },
-    });
+      { headers: corsHeaders }
+    );
   } catch (error: any) {
     console.error('Mobile Login API Error:', error);
     return NextResponse.json(
       { error: 'Internal server error', details: error.message },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }

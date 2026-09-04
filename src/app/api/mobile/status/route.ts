@@ -118,8 +118,8 @@ export async function GET(req: NextRequest) {
           status: 'device_mismatch',
           isBlocked: false,
           isActive: false,
-          error: 'This account is already active on another device. Multi-device login is strictly prohibited.',
-          message: 'This account is already active on another device. Multi-device login is strictly prohibited.',
+          error: 'This Account is Already Register on Another Device',
+          message: 'This Account is Already Register on Another Device',
         },
         { status: 403 }
       );
@@ -214,8 +214,8 @@ export async function POST(req: NextRequest) {
           status: 'device_mismatch',
           isBlocked: false,
           isActive: false,
-          error: 'This account is already active on another device. Multi-device login is strictly prohibited.',
-          message: 'This account is already active on another device. Multi-device login is strictly prohibited.',
+          error: 'This Account is Already Register on Another Device',
+          message: 'This Account is Already Register on Another Device',
         },
         { status: 403 }
       );

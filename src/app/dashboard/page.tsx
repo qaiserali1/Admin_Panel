@@ -148,6 +148,7 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to reset device');
 
       showToast(`Device unlinked for ${username}`);
+      setEditingUser((prev) => (prev && prev.id === id ? { ...prev, deviceId: null } : prev));
       fetchUsers();
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -957,6 +958,33 @@ export default function DashboardPage() {
                   value={editingUser.username}
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-slate-400 focus:outline-none cursor-not-allowed"
                 />
+              </div>
+
+              {/* Device Binding Lock & Reset Button */}
+              <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/80 mb-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <label className="block text-xs font-semibold text-slate-300 mb-1 uppercase tracking-wide">
+                      Device Binding Status
+                    </label>
+                    <p className="text-xs font-mono truncate">
+                      {editingUser.deviceId ? (
+                        <span className="text-emerald-400 font-semibold">Locked: {editingUser.deviceId}</span>
+                      ) : (
+                        <span className="text-slate-500 italic">No device bound (Unbound)</span>
+                      )}
+                    </p>
+                  </div>
+                  {editingUser.deviceId && (
+                    <button
+                      type="button"
+                      onClick={() => handleResetDevice(editingUser.id, editingUser.username)}
+                      className="shrink-0 px-3 py-1.5 text-xs font-semibold bg-rose-950/70 hover:bg-rose-900/80 text-rose-300 border border-rose-800/70 rounded-lg transition shadow-sm"
+                    >
+                      Reset Device Lock
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div>
