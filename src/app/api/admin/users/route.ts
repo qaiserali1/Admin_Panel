@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
         role: true,
         status: true,
         deviceId: true,
+        isDeviceBindingEnabled: true,
         agencyName: true,
         bookerName: true,
         mobileNumber: true,
@@ -87,6 +88,7 @@ async function handleUpdateUser(req: NextRequest) {
       id,
       status,
       resetDevice,
+      isDeviceBindingEnabled,
       agencyName,
       bookerName,
       mobileNumber,
@@ -103,6 +105,10 @@ async function handleUpdateUser(req: NextRequest) {
     }
 
     const updateData: any = {};
+
+    if (typeof isDeviceBindingEnabled === 'boolean') {
+      updateData.isDeviceBindingEnabled = isDeviceBindingEnabled;
+    }
 
     if (status) {
       if (!['pending', 'active', 'blocked'].includes(status)) {
@@ -151,6 +157,7 @@ async function handleUpdateUser(req: NextRequest) {
         role: true,
         status: true,
         deviceId: true,
+        isDeviceBindingEnabled: true,
         agencyName: true,
         bookerName: true,
         mobileNumber: true,
@@ -239,6 +246,7 @@ export async function POST(req: NextRequest) {
         role: true,
         status: true,
         deviceId: true,
+        isDeviceBindingEnabled: true,
         agencyName: true,
         bookerName: true,
         mobileNumber: true,

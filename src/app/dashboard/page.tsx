@@ -25,6 +25,8 @@ import {
   Pencil,
   Share2,
   Package,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 
 interface User {
@@ -33,6 +35,7 @@ interface User {
   role: string;
   status: 'pending' | 'active' | 'blocked';
   deviceId: string | null;
+  isDeviceBindingEnabled?: boolean;
   agencyName?: string | null;
   bookerName?: string | null;
   mobileNumber?: string | null;
@@ -152,6 +155,45 @@ export default function DashboardPage() {
       fetchUsers();
     } catch (err: any) {
       showToast(err.message, 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleToggleDeviceBinding = async (user: User) => {
+    const currentState = user.isDeviceBindingEnabled !== false;
+    const nextState = !currentState;
+
+    // Optimistically update UI
+    setUsers((prev) =>
+      prev.map((u) => (u.id === user.id ? { ...u, isDeviceBindingEnabled: nextState } : u))
+    );
+
+    try {
+      setActionLoadingId(user.id);
+      const res = await fetch('/api/users/toggle-binding', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, isDeviceBindingEnabled: nextState }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        // Rollback on failure
+        setUsers((prev) =>
+          prev.map((u) => (u.id === user.id ? { ...u, isDeviceBindingEnabled: currentState } : u))
+        );
+        throw new Error(data.error || 'Failed to update device binding');
+      }
+
+      showToast(
+        nextState
+          ? `Device lock enabled for ${user.bookerName || user.username}`
+          : `Device lock bypassed for ${user.bookerName || user.username}`,
+        'success'
+      );
+    } catch (err: any) {
+      showToast(err.message, 'error');
+      fetchUsers();
     } finally {
       setActionLoadingId(null);
     }
@@ -629,37 +671,89 @@ export default function DashboardPage() {
 
                         {/* Device ID & Binding */}
                         <td className="py-4 px-4">
-                          {user.deviceId ? (
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-[11px] bg-slate-950 px-2 py-1 rounded border border-slate-800 text-slate-300 max-w-[180px] truncate">
-                                {user.deviceId}
-                              </span>
+                          <div className="space-y-2">
+                            {/* ON/OFF Switch & Status Badge */}
+                            <div className="flex items-center gap-2.5">
                               <button
-                                onClick={() => copyToClipboard(user.deviceId!, user.id)}
-                                title="Copy Device ID"
-                                className="p-1 text-slate-500 hover:text-slate-300 transition"
-                              >
-                                {copiedId === user.id ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                ) : (
-                                  <Copy className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                              <button
-                                onClick={() => handleResetDevice(user.id, user.username)}
+                                type="button"
+                                role="switch"
+                                aria-checked={user.isDeviceBindingEnabled !== false}
                                 disabled={isProcessing}
-                                title="Unbind / Reset device for this booker"
-                                className="px-2 py-0.5 text-[10px] text-indigo-400 hover:bg-indigo-950/60 rounded border border-indigo-800/40 transition"
+                                onClick={() => handleToggleDeviceBinding(user)}
+                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                  user.isDeviceBindingEnabled !== false
+                                    ? 'bg-emerald-500 hover:bg-emerald-400'
+                                    : 'bg-slate-700 hover:bg-slate-600'
+                                } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                title={
+                                  user.isDeviceBindingEnabled !== false
+                                    ? 'Device Binding is ON (1-Device Lock). Click to turn OFF / Bypass.'
+                                    : 'Device Binding is OFF (Bypassed). Click to turn ON.'
+                                }
                               >
-                                Reset
+                                <span
+                                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                                    user.isDeviceBindingEnabled !== false ? 'translate-x-4' : 'translate-x-0'
+                                  }`}
+                                />
                               </button>
+
+                              <span
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide ${
+                                  user.isDeviceBindingEnabled !== false
+                                    ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/50'
+                                    : 'bg-amber-950/80 text-amber-300 border border-amber-800/50'
+                                }`}
+                              >
+                                {user.isDeviceBindingEnabled !== false ? (
+                                  <>
+                                    <Lock className="w-2.5 h-2.5 text-emerald-400" />
+                                    <span>Binding ON</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Unlock className="w-2.5 h-2.5 text-amber-400" />
+                                    <span>Bypassed (OFF)</span>
+                                  </>
+                                )}
+                              </span>
                             </div>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-slate-500 italic text-[11px]">
-                              <Smartphone className="w-3 h-3 text-slate-600" />
-                              Unbound (First device binds on login)
-                            </span>
-                          )}
+
+                            {/* Hardware Device ID & Reset */}
+                            {user.deviceId ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-[11px] bg-slate-950 px-2 py-0.5 rounded border border-slate-800 text-slate-300 max-w-[170px] truncate">
+                                  {user.deviceId}
+                                </span>
+                                <button
+                                  onClick={() => copyToClipboard(user.deviceId!, user.id)}
+                                  title="Copy Device ID"
+                                  className="p-1 text-slate-500 hover:text-slate-300 transition"
+                                >
+                                  {copiedId === user.id ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => handleResetDevice(user.id, user.username)}
+                                  disabled={isProcessing}
+                                  title="Unbind / Reset device for this booker"
+                                  className="px-1.5 py-0.5 text-[10px] text-indigo-400 hover:bg-indigo-950/60 rounded border border-indigo-800/40 transition"
+                                >
+                                  Reset
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-slate-500 italic text-[11px]">
+                                <Smartphone className="w-3 h-3 text-slate-600" />
+                                {user.isDeviceBindingEnabled !== false
+                                  ? 'Unbound (Binds on first login)'
+                                  : 'No device bound (Any device allowed)'}
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         {/* Status (Color Coded: Yellow for Pending, Green for Active, Red for Blocked) */}
@@ -982,13 +1076,47 @@ export default function DashboardPage() {
                 />
               </div>
 
-              {/* Device Binding Lock & Reset Button */}
-              <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/80 mb-4">
+              {/* Device Binding Lock & Toggle */}
+              <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/80 mb-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <label className="block text-xs font-semibold text-slate-300 mb-1 uppercase tracking-wide">
-                      Device Binding Status
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-0.5 uppercase tracking-wide">
+                      Device Binding Enforcement
                     </label>
+                    <p className="text-xs text-slate-400">
+                      {editingUser.isDeviceBindingEnabled !== false
+                        ? 'Strict 1-Device Lock Enabled'
+                        : 'Bypassed (Any device can log in)'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={editingUser.isDeviceBindingEnabled !== false}
+                    onClick={async () => {
+                      const next = editingUser.isDeviceBindingEnabled === false;
+                      await handleToggleDeviceBinding(editingUser);
+                      setEditingUser((prev) => (prev ? { ...prev, isDeviceBindingEnabled: next } : null));
+                    }}
+                    className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      editingUser.isDeviceBindingEnabled !== false
+                        ? 'bg-emerald-500 hover:bg-emerald-600'
+                        : 'bg-slate-700 hover:bg-slate-600'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        editingUser.isDeviceBindingEnabled !== false ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 pt-2.5 border-t border-slate-800/60">
+                  <div className="min-w-0">
+                    <span className="block text-[11px] text-slate-500 uppercase tracking-wide">
+                      Hardware ID (IMEI / UUID)
+                    </span>
                     <p className="text-xs font-mono truncate">
                       {editingUser.deviceId ? (
                         <span className="text-emerald-400 font-semibold">Locked: {editingUser.deviceId}</span>

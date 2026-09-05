@@ -23,15 +23,15 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { username, password, deviceId } = body;
 
-    if (!username || !password || !deviceId) {
+    if (!username || !password) {
       return NextResponse.json(
-        { error: 'username, password, and deviceId are required' },
+        { error: 'username and password are required' },
         { status: 400, headers: corsHeaders }
       );
     }
 
     const trimmedUsername = username.trim();
-    const trimmedDeviceId = String(deviceId).trim();
+    const trimmedDeviceId = deviceId ? String(deviceId).trim() : null;
 
     // 1. Check if user exists
     const existingUser = await prisma.user.findUnique({
@@ -87,33 +87,53 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5. Strict 1-User-to-1-Device Binding Check
-    const dbDeviceId = existingUser.deviceId ? String(existingUser.deviceId).trim() : null;
+    // 5. Device Binding Logic
+    // If isDeviceBindingEnabled is true, enforce strict 1-device lock logic.
+    // If isDeviceBindingEnabled is false, completely bypass device ID check and allow login from any device.
+    if (existingUser.isDeviceBindingEnabled) {
+      if (!trimmedDeviceId) {
+        return NextResponse.json(
+          { error: 'deviceId is required when device binding is enabled' },
+          { status: 400, headers: corsHeaders }
+        );
+      }
 
-    if (dbDeviceId !== null && dbDeviceId !== trimmedDeviceId) {
-      return NextResponse.json(
-        {
-          success: false,
-          status: 'device_mismatch',
-          error: 'This Account is Already Register on Another Device',
-          message: 'This Account is Already Register on Another Device',
-        },
-        { status: 403, headers: corsHeaders }
-      );
-    }
+      const dbDeviceId = existingUser.deviceId ? String(existingUser.deviceId).trim() : null;
 
-    // Bind device if currently null, or refresh session
-    if (!dbDeviceId) {
-      await prisma.user.update({
-        where: { id: existingUser.id },
-        data: { deviceId: trimmedDeviceId },
-      });
-      existingUser.deviceId = trimmedDeviceId;
+      if (dbDeviceId !== null && dbDeviceId !== trimmedDeviceId) {
+        return NextResponse.json(
+          {
+            success: false,
+            status: 'device_mismatch',
+            error: 'This Account is Already Register on Another Device',
+            message: 'This Account is Already Register on Another Device',
+          },
+          { status: 403, headers: corsHeaders }
+        );
+      }
+
+      // Bind device if currently null, or refresh session
+      if (!dbDeviceId) {
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { deviceId: trimmedDeviceId },
+        });
+        existingUser.deviceId = trimmedDeviceId;
+      } else {
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { deviceId: trimmedDeviceId, updatedAt: new Date() },
+        });
+      }
     } else {
-      await prisma.user.update({
-        where: { id: existingUser.id },
-        data: { deviceId: trimmedDeviceId, updatedAt: new Date() },
-      });
+      // Device binding bypassed: allow login from any device
+      if (trimmedDeviceId) {
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { deviceId: trimmedDeviceId, updatedAt: new Date() },
+        });
+        existingUser.deviceId = trimmedDeviceId;
+      }
     }
 
     // Generate JWT token
@@ -140,6 +160,7 @@ export async function POST(req: NextRequest) {
           role: existingUser.role,
           status: 'active',
           deviceId: existingUser.deviceId,
+          isDeviceBindingEnabled: existingUser.isDeviceBindingEnabled,
         },
       },
       { headers: corsHeaders }

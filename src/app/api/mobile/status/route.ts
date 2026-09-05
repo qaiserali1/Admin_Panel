@@ -36,6 +36,7 @@ async function resolveUser(req: NextRequest, bodyOrParams: any) {
       role: true,
       status: true,
       deviceId: true,
+      isDeviceBindingEnabled: true,
     },
   });
 
@@ -109,6 +110,7 @@ export async function GET(req: NextRequest) {
 
     // 4. Device Mismatch (Multi-Device Restriction)
     if (
+      user.isDeviceBindingEnabled !== false &&
       incomingDeviceId &&
       user.deviceId &&
       user.deviceId !== String(incomingDeviceId).trim()
@@ -131,6 +133,7 @@ export async function GET(req: NextRequest) {
       isBlocked: false,
       isPending: false,
       deviceId: user.deviceId,
+      isDeviceBindingEnabled: user.isDeviceBindingEnabled !== false,
       message: 'Active',
     });
   } catch (err: any) {
@@ -205,6 +208,7 @@ export async function POST(req: NextRequest) {
 
     // 4. Device Mismatch (Multi-Device Restriction)
     if (
+      user.isDeviceBindingEnabled !== false &&
       incomingDeviceId &&
       user.deviceId &&
       user.deviceId !== String(incomingDeviceId).trim()
@@ -227,6 +231,7 @@ export async function POST(req: NextRequest) {
       isBlocked: false,
       isPending: false,
       deviceId: user.deviceId,
+      isDeviceBindingEnabled: user.isDeviceBindingEnabled !== false,
       message: 'Active',
     });
   } catch (err: any) {

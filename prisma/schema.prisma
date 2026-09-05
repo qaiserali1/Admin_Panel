@@ -8,20 +8,21 @@ generator client {
 }
 
 model User {
-  id               String      @id @default(cuid())
-  username         String      @unique
-  password         String
-  deviceId         String?
-  role             String      @default("booker")
-  status           String      @default("pending") // 'pending' | 'active' | 'blocked'
-  agencyName       String?
-  bookerName       String?
-  mobileNumber     String?
-  sheetImportLimit Int         @default(1)
-  dailyImportCount Int         @default(0)
-  lastImportDate   DateTime?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  id                     String      @id @default(cuid())
+  username               String      @unique
+  password               String
+  deviceId               String?
+  isDeviceBindingEnabled Boolean     @default(true)
+  role                   String      @default("booker")
+  status                 String      @default("pending") // 'pending' | 'active' | 'blocked'
+  agencyName             String?
+  bookerName             String?
+  mobileNumber           String?
+  sheetImportLimit       Int         @default(1)
+  dailyImportCount       Int         @default(0)
+  lastImportDate         DateTime?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
 }
 
 model ProductSKU {
@@ -31,4 +32,3 @@ model ProductSKU {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
-
