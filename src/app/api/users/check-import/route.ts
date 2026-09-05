@@ -24,34 +24,49 @@ export async function OPTIONS() {
   });
 }
 
-function isDifferentDay(d1: Date, d2: Date | null | undefined): boolean {
-  if (!d2) return true;
-  const date1 = new Date(d1);
-  const date2 = new Date(d2);
+function isNewDay(now: Date, lastDate: Date | null | undefined): boolean {
+  if (!lastDate) return true;
+  const d1 = new Date(now);
+  const d2 = new Date(lastDate);
   return (
-    date1.getFullYear() !== date2.getFullYear() ||
-    date1.getMonth() !== date2.getMonth() ||
-    date1.getDate() !== date2.getDate()
+    d1.getFullYear() !== d2.getFullYear() ||
+    d1.getMonth() !== d2.getMonth() ||
+    d1.getDate() !== d2.getDate()
   );
 }
 
-async function resolveUser(req: NextRequest, bodyOrParams: any) {
-  let userId = bodyOrParams?.userId;
-  let username = bodyOrParams?.username;
+async function resolveFreshUser(req: NextRequest, bodyOrParams: any) {
+  let userId =
+    bodyOrParams?.userId ||
+    bodyOrParams?.id ||
+    bodyOrParams?.user_id ||
+    bodyOrParams?.user?.id;
+  let username = bodyOrParams?.username || bodyOrParams?.user?.username;
 
-  // Fallback to URL search parameters
+  // Check URL search parameters
   const { searchParams } = new URL(req.url);
-  if (!userId) userId = searchParams.get('userId');
-  if (!username) username = searchParams.get('username');
+  if (!userId) {
+    userId =
+      searchParams.get('userId') ||
+      searchParams.get('id') ||
+      searchParams.get('user_id');
+  }
+  if (!username) {
+    username = searchParams.get('username');
+  }
 
-  // Fallback to Bearer token
+  // Extract userId/username from Bearer token if not explicitly provided
   const authHeader = req.headers.get('authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
       const token = authHeader.substring(7);
       const decoded: any = jwt.verify(token, JWT_SECRET);
-      if (decoded?.userId) userId = decoded.userId;
-      if (decoded?.username && !username) username = decoded.username;
+      if (!userId) {
+        userId = decoded?.userId || decoded?.id || decoded?.sub;
+      }
+      if (!username) {
+        username = decoded?.username;
+      }
     } catch {}
   }
 
@@ -59,84 +74,91 @@ async function resolveUser(req: NextRequest, bodyOrParams: any) {
     return null;
   }
 
-  // Always fetch the freshest user record directly from database
-  return await prisma.user.findFirst({
-    where: {
-      OR: [
-        ...(userId ? [{ id: String(userId).trim() }] : []),
-        ...(username ? [
+  // 1. Fresh DB Fetch: Always query latest user data directly from Prisma using userId
+  if (userId) {
+    const userById = await prisma.user.findUnique({
+      where: { id: String(userId).trim() },
+      select: {
+        id: true,
+        username: true,
+        status: true,
+        sheetImportLimit: true,
+        dailyImportCount: true,
+        lastImportDate: true,
+      },
+    });
+    if (userById) return userById;
+  }
+
+  if (username) {
+    return await prisma.user.findFirst({
+      where: {
+        OR: [
           { username: String(username).trim() },
           { username: { equals: String(username).trim(), mode: 'insensitive' as const } },
-        ] : []),
-      ],
-    },
-    select: {
-      id: true,
-      username: true,
-      status: true,
-      sheetImportLimit: true,
-      dailyImportCount: true,
-      lastImportDate: true,
-    },
-  });
+        ],
+      },
+      select: {
+        id: true,
+        username: true,
+        status: true,
+        sheetImportLimit: true,
+        dailyImportCount: true,
+        lastImportDate: true,
+      },
+    });
+  }
+
+  return null;
 }
 
 async function handleCheckImport(req: NextRequest, params: any) {
   try {
-    const user = await resolveUser(req, params);
+    // 1. Fresh DB Fetch directly from Prisma
+    const user = await resolveFreshUser(req, params);
 
     if (!user) {
       return NextResponse.json(
-        { success: false, error: 'User not found. Provide valid userId, username, or Bearer token' },
+        { error: 'User not found' },
         { status: 404, headers: corsHeaders }
       );
     }
 
     if (user.status === 'blocked') {
       return NextResponse.json(
-        { success: false, error: 'Account is blocked by Admin', message: 'Account is blocked by Admin' },
+        { error: 'Your account has been blocked by Admin.' },
         { status: 403, headers: corsHeaders }
       );
     }
 
     const now = new Date();
-    const hasRolledOver = isDifferentDay(now, user.lastImportDate);
 
-    // If midnight has passed, count resets to 0 for the new day
-    let currentCount = hasRolledOver ? 0 : (user.dailyImportCount || 0);
+    // 2. Date Check: If it is a new day (not today's date), reset dailyImportCount to 0
+    const hasRolledOver = isNewDay(now, user.lastImportDate);
+    let dailyImportCount = hasRolledOver ? 0 : (user.dailyImportCount ?? 0);
 
-    // Strictly ensure sheetImportLimit is an integer
-    const limit = typeof user.sheetImportLimit === 'number'
+    // 3. Live Limit Comparison: Compare dailyImportCount strictly against latest sheetImportLimit
+    const sheetImportLimit = typeof user.sheetImportLimit === 'number'
       ? user.sheetImportLimit
       : parseInt(String(user.sheetImportLimit), 10) || 1;
 
-    // Check if limit is reached or exceeded: DO NOT increment, return 403
-    if (currentCount >= limit) {
+    // If daily limit reached or exceeded, return 403 with exact error message
+    if (dailyImportCount >= sheetImportLimit) {
       if (hasRolledOver && user.dailyImportCount !== 0) {
         await prisma.user.update({
           where: { id: user.id },
-          data: {
-            dailyImportCount: 0,
-            lastImportDate: now,
-          },
+          data: { dailyImportCount: 0 },
         });
       }
 
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Limit exceed',
-          message: 'Limit exceed',
-          dailyImportCount: currentCount,
-          sheetImportLimit: limit,
-          remainingImports: 0,
-        },
+        { error: 'Your Daily Limit Exceed' },
         { status: 403, headers: corsHeaders }
       );
     }
 
-    // Strictly under limit: increment count by 1 and update lastImportDate
-    const newCount = currentCount + 1;
+    // Strictly under limit: increment count by 1, update lastImportDate to now, save to Prisma
+    const newCount = dailyImportCount + 1;
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -167,7 +189,7 @@ async function handleCheckImport(req: NextRequest, params: any) {
   } catch (error: any) {
     console.error('Check Import API Error:', error);
     return NextResponse.json(
-      { success: false, error: 'Internal server error', details: error.message },
+      { error: 'Internal server error', details: error.message },
       { status: 500, headers: corsHeaders }
     );
   }
@@ -176,7 +198,7 @@ async function handleCheckImport(req: NextRequest, params: any) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   return handleCheckImport(req, {
-    userId: searchParams.get('userId'),
+    userId: searchParams.get('userId') || searchParams.get('id'),
     username: searchParams.get('username'),
   });
 }
@@ -185,7 +207,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const { searchParams } = new URL(req.url);
   return handleCheckImport(req, {
-    userId: body?.userId || searchParams.get('userId'),
+    userId: body?.userId || body?.id || searchParams.get('userId') || searchParams.get('id'),
     username: body?.username || searchParams.get('username'),
+    ...body,
   });
 }
