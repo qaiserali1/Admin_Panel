@@ -34,33 +34,30 @@ function isNewDay(now: Date, lastDate: Date | null | undefined): boolean {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const { searchParams } = new URL(req.url);
+    const body = await req.json().catch(() => null);
 
-    const userId = body?.userId || body?.id || body?.user_id || searchParams.get('userId') || searchParams.get('id');
-
-    if (!userId) {
+    // 1. Strict payload validation at the very top
+    if (!body || !body.userId || typeof body.userId !== 'string' || !body.userId.trim()) {
       return NextResponse.json(
-        { error: 'userId is required' },
+        { error: "Missing User ID in request payload." },
         { status: 400, headers: corsHeaders }
       );
     }
 
-    const cleanUserId = String(userId).trim();
-
-    // Query strictly by user ID (CUID) - DO NOT search by username
+    // 2. Query Prisma strictly by req.body.userId (id field)
     const user = await prisma.user.findUnique({
-      where: { id: cleanUserId },
+      where: { id: body.userId.trim() },
     });
 
+    // 3. User null check
     if (!user) {
       return NextResponse.json(
-        { error: 'User not found' },
+        { error: "User not found in database." },
         { status: 404, headers: corsHeaders }
       );
     }
 
-    // 1. Block Check: If user is blocked or inactive, strictly return 403
+    // Block Check: If user is blocked or inactive, strictly return 403
     if (user.status === 'blocked' || (user as any).active === false) {
       return NextResponse.json(
         { error: 'blocked', message: 'Your account is blocked by admin' },
@@ -68,12 +65,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Date Rollover Check
+    // Date Rollover Check
     const now = new Date();
     const hasRolledOver = isNewDay(now, user.lastImportDate);
     let dailyImportCount = hasRolledOver ? 0 : (user.dailyImportCount ?? 0);
 
-    // 3. Limit Check: strictly compare against sheetImportLimit
+    // Limit Check: strictly compare against sheetImportLimit
     const sheetImportLimit = typeof user.sheetImportLimit === 'number'
       ? user.sheetImportLimit
       : parseInt(String(user.sheetImportLimit), 10) || 1;
@@ -133,25 +130,22 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('userId') || searchParams.get('id') || searchParams.get('user_id');
+    const userId = searchParams.get('userId');
 
-    if (!userId) {
+    if (!userId || !userId.trim()) {
       return NextResponse.json(
-        { error: 'userId is required' },
+        { error: "Missing User ID in request payload." },
         { status: 400, headers: corsHeaders }
       );
     }
 
-    const cleanUserId = String(userId).trim();
-
-    // Query strictly by user ID (CUID)
     const user = await prisma.user.findUnique({
-      where: { id: cleanUserId },
+      where: { id: userId.trim() },
     });
 
     if (!user) {
       return NextResponse.json(
-        { error: 'User not found' },
+        { error: "User not found in database." },
         { status: 404, headers: corsHeaders }
       );
     }
