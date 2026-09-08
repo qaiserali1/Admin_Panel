@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import jwt from 'jsonwebtoken';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const fetchCache = 'force-no-store';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'fmcg-super-secret-jwt-key';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -35,87 +32,26 @@ function isNewDay(now: Date, lastDate: Date | null | undefined): boolean {
   );
 }
 
-async function resolveFreshUser(req: NextRequest, bodyOrParams: any) {
-  let userId =
-    bodyOrParams?.userId ||
-    bodyOrParams?.id ||
-    bodyOrParams?.user_id ||
-    bodyOrParams?.user?.id;
-  let username = bodyOrParams?.username || bodyOrParams?.user?.username;
-
-  // Check URL search parameters
-  const { searchParams } = new URL(req.url);
-  if (!userId) {
-    userId =
-      searchParams.get('userId') ||
-      searchParams.get('id') ||
-      searchParams.get('user_id');
-  }
-  if (!username) {
-    username = searchParams.get('username');
-  }
-
-  // Extract userId/username from Bearer token if not explicitly provided
-  const authHeader = req.headers.get('authorization');
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    try {
-      const token = authHeader.substring(7);
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-      if (!userId) {
-        userId = decoded?.userId || decoded?.id || decoded?.sub;
-      }
-      if (!username) {
-        username = decoded?.username;
-      }
-    } catch {}
-  }
-
-  if (!userId && !username) {
-    return null;
-  }
-
-  // 1. Fresh DB Fetch: Always query latest user data directly from Prisma using userId
-  if (userId) {
-    const userById = await prisma.user.findUnique({
-      where: { id: String(userId).trim() },
-      select: {
-        id: true,
-        username: true,
-        status: true,
-        sheetImportLimit: true,
-        dailyImportCount: true,
-        lastImportDate: true,
-      },
-    });
-    if (userById) return userById;
-  }
-
-  if (username) {
-    return await prisma.user.findFirst({
-      where: {
-        OR: [
-          { username: String(username).trim() },
-          { username: { equals: String(username).trim(), mode: 'insensitive' as const } },
-        ],
-      },
-      select: {
-        id: true,
-        username: true,
-        status: true,
-        sheetImportLimit: true,
-        dailyImportCount: true,
-        lastImportDate: true,
-      },
-    });
-  }
-
-  return null;
-}
-
-async function handleCheckImport(req: NextRequest, params: any) {
+export async function POST(req: NextRequest) {
   try {
-    // 1. Fresh DB Fetch directly from Prisma
-    const user = await resolveFreshUser(req, params);
+    const body = await req.json().catch(() => ({}));
+    const { searchParams } = new URL(req.url);
+
+    const userId = body?.userId || body?.id || body?.user_id || searchParams.get('userId') || searchParams.get('id');
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'userId is required' },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    const cleanUserId = String(userId).trim();
+
+    // Query strictly by user ID (CUID) - DO NOT search by username
+    const user = await prisma.user.findUnique({
+      where: { id: cleanUserId },
+    });
 
     if (!user) {
       return NextResponse.json(
@@ -124,6 +60,7 @@ async function handleCheckImport(req: NextRequest, params: any) {
       );
     }
 
+    // 1. Block Check: If user is blocked or inactive, strictly return 403
     if (user.status === 'blocked' || (user as any).active === false) {
       return NextResponse.json(
         { error: 'blocked', message: 'Your account is blocked by admin' },
@@ -131,18 +68,16 @@ async function handleCheckImport(req: NextRequest, params: any) {
       );
     }
 
+    // 2. Date Rollover Check
     const now = new Date();
-
-    // 2. Date Check: If it is a new day (not today's date), reset dailyImportCount to 0
     const hasRolledOver = isNewDay(now, user.lastImportDate);
     let dailyImportCount = hasRolledOver ? 0 : (user.dailyImportCount ?? 0);
 
-    // 3. Live Limit Comparison: Compare dailyImportCount strictly against latest sheetImportLimit
+    // 3. Limit Check: strictly compare against sheetImportLimit
     const sheetImportLimit = typeof user.sheetImportLimit === 'number'
       ? user.sheetImportLimit
       : parseInt(String(user.sheetImportLimit), 10) || 1;
 
-    // If daily limit reached or exceeded, return 403 with exact error message
     if (dailyImportCount >= sheetImportLimit) {
       if (hasRolledOver && user.dailyImportCount !== 0) {
         await prisma.user.update({
@@ -157,7 +92,7 @@ async function handleCheckImport(req: NextRequest, params: any) {
       );
     }
 
-    // Strictly under limit: increment count by 1, update lastImportDate to now, save to Prisma
+    // Increment count by 1 and save
     const newCount = dailyImportCount + 1;
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
@@ -187,7 +122,7 @@ async function handleCheckImport(req: NextRequest, params: any) {
       { status: 200, headers: corsHeaders }
     );
   } catch (error: any) {
-    console.error('Check Import API Error:', error);
+    console.error('Check Import API Error (POST):', error);
     return NextResponse.json(
       { error: 'Internal server error', details: error.message },
       { status: 500, headers: corsHeaders }
@@ -196,19 +131,60 @@ async function handleCheckImport(req: NextRequest, params: any) {
 }
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  return handleCheckImport(req, {
-    userId: searchParams.get('userId') || searchParams.get('id'),
-    username: searchParams.get('username'),
-  });
-}
+  try {
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get('userId') || searchParams.get('id') || searchParams.get('user_id');
 
-export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
-  const { searchParams } = new URL(req.url);
-  return handleCheckImport(req, {
-    userId: body?.userId || body?.id || searchParams.get('userId') || searchParams.get('id'),
-    username: body?.username || searchParams.get('username'),
-    ...body,
-  });
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'userId is required' },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    const cleanUserId = String(userId).trim();
+
+    // Query strictly by user ID (CUID)
+    const user = await prisma.user.findUnique({
+      where: { id: cleanUserId },
+    });
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404, headers: corsHeaders }
+      );
+    }
+
+    if (user.status === 'blocked' || (user as any).active === false) {
+      return NextResponse.json(
+        { error: 'blocked', message: 'Your account is blocked by admin' },
+        { status: 403, headers: corsHeaders }
+      );
+    }
+
+    const now = new Date();
+    const hasRolledOver = isNewDay(now, user.lastImportDate);
+    const dailyImportCount = hasRolledOver ? 0 : (user.dailyImportCount ?? 0);
+    const sheetImportLimit = typeof user.sheetImportLimit === 'number'
+      ? user.sheetImportLimit
+      : parseInt(String(user.sheetImportLimit), 10) || 1;
+
+    return NextResponse.json(
+      {
+        allowed: dailyImportCount < sheetImportLimit,
+        dailyImportCount,
+        sheetImportLimit,
+        remainingImports: Math.max(0, sheetImportLimit - dailyImportCount),
+        lastImportDate: user.lastImportDate,
+      },
+      { status: 200, headers: corsHeaders }
+    );
+  } catch (error: any) {
+    console.error('Check Import API Error (GET):', error);
+    return NextResponse.json(
+      { error: 'Internal server error', details: error.message },
+      { status: 500, headers: corsHeaders }
+    );
+  }
 }
