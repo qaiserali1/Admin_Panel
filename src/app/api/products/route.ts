@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { verifyAuth } from '@/lib/authMiddleware';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,9 +16,16 @@ export async function OPTIONS() {
   });
 }
 
-// GET: Fetch all SKUs (CORS enabled for mobile app)
+// GET: Fetch all SKUs (Protected: live DB status check if Bearer token present)
 export async function GET(req: NextRequest) {
   try {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const authResult = await verifyAuth(req);
+      if (!authResult.success) {
+        return authResult.response;
+      }
+    }
     const { searchParams } = new URL(req.url);
     const search = searchParams.get('search');
     const raw = searchParams.get('raw');

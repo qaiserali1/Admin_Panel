@@ -124,9 +124,9 @@ async function handleCheckImport(req: NextRequest, params: any) {
       );
     }
 
-    if (user.status === 'blocked') {
+    if (user.status === 'blocked' || (user as any).active === false) {
       return NextResponse.json(
-        { error: 'Your account has been blocked by Admin.' },
+        { error: 'blocked', message: 'Your account is blocked by admin' },
         { status: 403, headers: corsHeaders }
       );
     }
