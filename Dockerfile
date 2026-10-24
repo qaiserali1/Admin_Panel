@@ -3,7 +3,7 @@
 # ---------------------------------------------------------
 # Stage 1: Base image with essential runtime libraries
 # ---------------------------------------------------------
-FROM node:20-alpine AS base
+FROM node:24.22.1-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat wget
 
@@ -80,4 +80,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=5 \
   CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
 
-CMD ["./docker-entrypoint.sh"]
+CMD ["node", "server.js"]
